@@ -1,4 +1,5 @@
 #include "ofApp.h"
+#include <math.h>
 
 //--------------------------------------------------------------
 void ofApp::setup(){
@@ -19,7 +20,7 @@ void ofApp::setup(){
         u_d_color.push_back(ofColor::fromHsb(hue, 80, 80));
         
         for (int i=0;i<csv_reader.numRows;i+=SKIP) {
-            col.push_back(atof(csv_reader.data[i][j].c_str()));
+            col.push_back(log(atof(csv_reader.data[i][j].c_str())));
             if (j==0) num_elements++;
         }
         data.push_back(col);
@@ -31,7 +32,7 @@ void ofApp::setup(){
         double max = *(max_element(data[i].begin(), data[i].end()));
         double min = *(min_element(data[i].begin(), data[i].end()));
         for (int j=0;j<num_elements;j++) {
-            data[i][j] = data[i][j] / max;
+            data[i][j] = ofNormalize(data[i][j],min, max);
         }
     }
 
@@ -61,11 +62,11 @@ void ofApp::update(){
 
 //--------------------------------------------------------------
 void ofApp::draw(){
-	ofBackgroundGradient(ofColor(70), ofColor(0));
+	ofBackgroundGradient(ofColor(50), ofColor(0));
 
     ofSetColor(255, 255, 255);
 
-    for (int j=1;j<num_series;j++) {
+    for (int j=num_series-1;j>0;j--) {
         ofMesh graph;
         graph.setMode(OF_PRIMITIVE_LINE_STRIP);
 
@@ -101,7 +102,7 @@ void ofApp::draw(){
     }
 
     // Draw little circles that follow the data
-    for (int j=1;j<num_series;j++) {
+    for (int j=num_series-1;j>0;j--) {
         float x = float((ofGetWidth()-2*W_MARGIN) * counter) / float(num_elements) + float(W_MARGIN);
         float y = ofGetHeight() - ((ofGetHeight()-2*H_MARGIN) * data[j][counter] + float(H_MARGIN));
 
