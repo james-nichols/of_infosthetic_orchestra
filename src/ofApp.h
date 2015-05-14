@@ -21,6 +21,9 @@
 #define SKIP 20
 #define FRAME_RATE 20
 
+#define MIDI_MIN 30
+#define MIDI_MAX 100
+
 using namespace wng;
 
 class ofApp : public ofBaseApp{
@@ -40,6 +43,7 @@ class ofApp : public ofBaseApp{
 		void dragEvent(ofDragInfo dragInfo);
 		void gotMessage(ofMessage msg);
 	   
+        // The raw data
         vector<vector<double> > data;
         int num_series; // "columns"
         int num_elements; // "rows"
@@ -48,9 +52,14 @@ class ofApp : public ofBaseApp{
         vector<ofColor> u_d_color;
 
         int counter;
-        int counter_skip;
+        
         ofxCsv csv_reader;
 
         // OSC mechanism
-		ofxOscSender sender;        
+		ofxOscSender osc_sender;     
+        // MIDI mechanism
+        ofxMidiOut midi_out;
+        int midi_channel;
+        int midi_note, midi_velocity;
+
 };

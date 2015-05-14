@@ -4,23 +4,23 @@
 void ofApp::setup(){
     counter = 0;
     
-    //for (int i=0;i<NUM_DATA;i++)
-    //    data.push_back(ofRandom(0.0, 1.0));
+    // Load the data from a CSV file...
     csv_reader.loadFile(ofToDataPath("/Users/james/projects/infosthetic_orchestra/mtgoxAUD.csv"));
-    num_elements = csv_reader.numRows;
-    num_series = csv_reader.data[0].size(); // Risky - assuming constant num of rows through file
+    num_series = csv_reader.data[0].size(); // Risky - assuming constant num of cols through file
+    num_elements = 0; 
     
     for (int j=0;j<num_series;j++) {
         
         vector<double> col;
 
-        // We give each data series a random colour
+        // We give each data series a colour
         int hue = float(j*255)/float(num_series); // ofRandom(0,255);
         d_color.push_back(ofColor::fromHsb(hue, 240, 240));
         u_d_color.push_back(ofColor::fromHsb(hue, 80, 80));
         
-        for (int i=0;i<num_elements;i++) {
+        for (int i=0;i<csv_reader.numRows;i+=SKIP) {
             col.push_back(atof(csv_reader.data[i][j].c_str()));
+            if (j==0) num_elements++;
         }
         data.push_back(col);
     }
@@ -29,17 +29,29 @@ void ofApp::setup(){
     // Now normalise the data
     for (int i=1;i<num_series;i++) {
         double max = *(max_element(data[i].begin(), data[i].end()));
+        double min = *(min_element(data[i].begin(), data[i].end()));
         for (int j=0;j<num_elements;j++) {
             data[i][j] = data[i][j] / max;
         }
     }
 
+    ofLog() << "Estimated time to finish cycle: " << float(num_elements) / float(FRAME_RATE);
+
+    // Set up the OSC osc_sender
+    osc_sender.setup(HOST, PORT);    
+   
+    // Set up the MIDI osc_sender
+    midi_channel = 1;
+    midi_note = 30;
+    midi_velocity = 127;
+    
+    midi_out.listPorts();
+    ofLog() << "Opening MIDI port " << 0 << ", sending to channel " << midi_channel;
+    midi_out.openPort(0);
+
     ofSetWindowTitle("Infosthetic Orchestra Data Broadcaster and Visualiser");
-    ofLog() << "Estimated time to finish cycle: " << float(num_elements) / float(SKIP * FRAME_RATE);
     ofDisableAntiAliasing();
     ofSetFrameRate(FRAME_RATE);
-
-	sender.setup(HOST, PORT);    
 }
 
 //--------------------------------------------------------------
@@ -61,7 +73,7 @@ void ofApp::draw(){
         ofSetColor(d_color[j]);
     	ofDrawBitmapString("Data "+ofToString(j)+": "+ofToString(data[j][counter]), TW_MARGIN, TH_MARGIN + j*12);
 
-        for (int i=0;i<num_elements;i+=SKIP) {
+        for (int i=0;i<num_elements;i++) {
             if (i<counter)
                 graph.addColor(d_color[j]);
             else 
@@ -76,10 +88,15 @@ void ofApp::draw(){
 		ofxOscMessage m;
 		m.setAddress("/data" + ofToString(j));
 		m.addFloatArg(data[j][counter]);
-		sender.sendMessage(m);
+		osc_sender.sendMessage(m);
 
         // Send MIDI
-        
+        midi_out.sendNoteOff(midi_channel, midi_note, midi_velocity); // Cancel previous note...
+        midi_note = ofMap(data[j][counter], 0.0, 1.0, MIDI_MIN, MIDI_MAX);
+        midi_out.sendNoteOn(midi_channel, midi_note, midi_velocity); // Send new note
+        // In case we want to send pitch-bend data...
+        //midi_out.sendPitchBend(channel, bend);
+            
         // Send serial/ardiuno CV
     }
 
@@ -100,7 +117,7 @@ void ofApp::draw(){
     ofSetColor(ofColor(255));
     ofDrawBitmapString("Data per second: " + ofToString(ofGetFrameRate()), TW_MARGIN, TH_MARGIN + (num_series+1)*12);
     
-    counter = (counter + SKIP) % num_elements;
+    counter = (counter + 1) % num_elements;
 }
 
 //--------------------------------------------------------------
