@@ -5,9 +5,9 @@
 //--------------------------------------------------------------
 void ofApp::setup(){
     counter = 0;
-    
+    ofSetDataPathRoot("./");  
     // Load the data from a CSV file...
-    csv_reader.loadFile(ofToDataPath("/Users/james/projects/infosthetic_orchestra/mtgoxAUD.csv"));
+    csv_reader.loadFile(ofToDataPath("../Resources/mtgoxAUD.csv"));
     num_series = csv_reader.data[0].size(); // Risky - assuming constant num of cols through file
     num_elements = 0; 
     
