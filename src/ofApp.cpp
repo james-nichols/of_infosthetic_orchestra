@@ -1,5 +1,6 @@
 #include "ofApp.h"
 #include <math.h>
+#include <time.h>
 
 //--------------------------------------------------------------
 void ofApp::setup(){
@@ -20,7 +21,8 @@ void ofApp::setup(){
         u_d_color.push_back(ofColor::fromHsb(hue, 80, 80));
         
         for (int i=0;i<csv_reader.numRows;i+=SKIP) {
-            col.push_back(log(atof(csv_reader.data[i][j].c_str())));
+            if (j==1) col.push_back(log(atof(csv_reader.data[i][j].c_str())));
+            else col.push_back(atof(csv_reader.data[i][j].c_str()));
             if (j==0) num_elements++;
         }
         data.push_back(col);
@@ -32,7 +34,7 @@ void ofApp::setup(){
         double max = *(max_element(data[i].begin(), data[i].end()));
         double min = *(min_element(data[i].begin(), data[i].end()));
         for (int j=0;j<num_elements;j++) {
-            data[i][j] = ofNormalize(data[i][j],min, max);
+            data[i][j] = ofNormalize(data[i][j], min, max);
         }
     }
 
@@ -53,7 +55,35 @@ void ofApp::setup(){
     ofSetWindowTitle("Infosthetic Orchestra Data Broadcaster and Visualiser");
     ofDisableAntiAliasing();
     ofSetFrameRate(FRAME_RATE);
+
+    // Set up the arduino for CV output (via PWM)
+	ard.connect("/dev/tty.usbserial-A9007W2m", 57600);
+    ofAddListener(ard.EInitialized, this, &ofApp::setupArduino);
+    bSetupArduino = false;	// flag so we setup arduino when its ready, you don't need to touch this :)
+     
+	//serial.setup("/dev/tty.usbserial-A9007W2m", 57600); // mac osx example
 }
+
+//--------------------------------------------------------------
+void ofApp::setupArduino(const int & version) {
+	
+	// remove listener because we don't need it anymore
+	ofRemoveListener(ard.EInitialized, this, &ofApp::setupArduino);
+    
+    // it is now safe to send commands to the Arduino
+    bSetupArduino = true;
+    
+    // print firmware name and version to the console
+    ofLogNotice() << ard.getFirmwareName(); 
+    ofLogNotice() << "firmata v" << ard.getMajorFirmwareVersion() << "." << ard.getMinorFirmwareVersion();
+    
+    // set pin D11 as PWM (analog output)
+	ard.sendDigitalPinMode(9, ARD_PWM);
+	ard.sendDigitalPinMode(10, ARD_PWM);
+	ard.sendDigitalPinMode(11, ARD_PWM);
+	
+}
+
 
 //--------------------------------------------------------------
 void ofApp::update(){
@@ -66,6 +96,9 @@ void ofApp::draw(){
 
     ofSetColor(255, 255, 255);
 
+    // Update the arduino
+    ard.update();
+    
     for (int j=num_series-1;j>0;j--) {
         ofMesh graph;
         graph.setMode(OF_PRIMITIVE_LINE_STRIP);
@@ -97,8 +130,15 @@ void ofApp::draw(){
         midi_out.sendNoteOn(midi_channel, midi_note, midi_velocity); // Send new note
         // In case we want to send pitch-bend data...
         //midi_out.sendPitchBend(channel, bend);
-            
+        
         // Send serial/ardiuno CV
+        if (bSetupArduino) {
+            int pin = 8+j; // Super hacky: series 1 gives us pin 9, 2 gives us pin 10, 3 gives 11 (the only available pins...)
+		    ard.sendPwm(pin, (int)(256 * data[j][counter]));   // pwm...
+        }
+
+        //serial.writeByte(8+j);
+		//serial.writeByte((int)(256 * data[j][counter]));   // pwm...
     }
 
     // Draw little circles that follow the data
@@ -115,8 +155,28 @@ void ofApp::draw(){
  
     }
 
+    // Send the date data
+    // Send OSC messages...
+    time_t time = int(data[0][counter]);
+    struct tm *tm = localtime(&time);
+    ofxOscMessage y;
+    y.setAddress("/year");
+    y.addIntArg(tm->tm_year+1900);
+    osc_sender.sendMessage(y);
+
+    ofxOscMessage m;
+    m.setAddress("/month");
+    m.addIntArg(tm->tm_mon+1);
+    osc_sender.sendMessage(m);
+    
+    ofxOscMessage d;
+    d.setAddress("/day");
+    d.addIntArg(tm->tm_mday);
+    osc_sender.sendMessage(d);
+
     ofSetColor(ofColor(255));
     ofDrawBitmapString("Data per second: " + ofToString(ofGetFrameRate()), TW_MARGIN, TH_MARGIN + (num_series+1)*12);
+    ofDrawBitmapString("Date: " + ofToString(tm->tm_mday) + "-" + ofToString(tm->tm_mon+1) + "-" + ofToString(tm->tm_year+1900), TW_MARGIN, TH_MARGIN + (num_series+2)*12);
     
     counter = (counter + 1) % num_elements;
 }

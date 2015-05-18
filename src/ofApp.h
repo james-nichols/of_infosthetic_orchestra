@@ -3,6 +3,7 @@
 #include "ofMain.h"
 #include "ofMath.h"
 #include "ofSerial.h"
+#include "ofEvents.h"
 
 // 3rd party addons
 #include "ofxOsc.h"
@@ -10,7 +11,7 @@
 #include "ofxMidi.h"
 
 //#define HOST "localhost"
-#define HOST "192.168.1.255"
+#define HOST "192.168.0.255"
 #define PORT 57120
 
 #define H_MARGIN 100
@@ -19,7 +20,7 @@
 #define TW_MARGIN 20
 
 #define SKIP 20
-#define FRAME_RATE 20
+#define FRAME_RATE 15 
 
 #define MIDI_MIN 30
 #define MIDI_MAX 100
@@ -57,9 +58,16 @@ class ofApp : public ofBaseApp{
 
         // OSC mechanism
 		ofxOscSender osc_sender;     
+        
         // MIDI mechanism
         ofxMidiOut midi_out;
         int midi_channel;
         int midi_note, midi_velocity;
-
+        
+        // Arduino/CV mechanism
+    	ofArduino ard;
+    	bool bSetupArduino;
+        void setupArduino(const int & version);
+        
+		//ofSerial serial;        
 };
