@@ -5,12 +5,13 @@
 //--------------------------------------------------------------
 void ofApp::setup(){
     counter = 0;
+    bRun = false;
     ofSetDataPathRoot("./");  
     // Load the data from a CSV file...
     csv_reader.loadFile(ofToDataPath("../Resources/mtgoxAUD.csv"));
     num_series = csv_reader.data[0].size(); // Risky - assuming constant num of cols through file
     num_elements = 0; 
-    
+     
     for (int j=0;j<num_series;j++) {
         
         vector<double> col;
@@ -28,6 +29,9 @@ void ofApp::setup(){
         data.push_back(col);
     }
     
+    for (int j=0;j<num_elements;j++) {
+        data[2][j] = data[2][j] * data[1][j] * data[1][j];
+    } 
 
     // Now normalise the data
     for (int i=1;i<num_series;i++) {
@@ -50,7 +54,7 @@ void ofApp::setup(){
     
     midi_out.listPorts();
     ofLog() << "Opening MIDI port " << 0 << ", sending to channel " << midi_channel;
-    midi_out.openPort(0);
+    midi_out.openPort(1);
 
     ofSetWindowTitle("Infosthetic Orchestra Data Broadcaster and Visualiser");
     ofDisableAntiAliasing();
@@ -94,18 +98,16 @@ void ofApp::update(){
 void ofApp::draw(){
 	ofBackgroundGradient(ofColor(50), ofColor(0));
 
-    ofSetColor(255, 255, 255);
+    time_t time = int(data[0][counter]);
+    struct tm *tm = localtime(&time);
 
-    // Update the arduino
-    ard.update();
-    
     for (int j=num_series-1;j>0;j--) {
         ofMesh graph;
         graph.setMode(OF_PRIMITIVE_LINE_STRIP);
 
         // Write legend
         ofSetColor(d_color[j]);
-    	ofDrawBitmapString("Data "+ofToString(j)+": "+ofToString(data[j][counter]), TW_MARGIN, TH_MARGIN + j*12);
+        ofDrawBitmapString("Data "+ofToString(j)+": "+ofToString(data[j][counter]), TW_MARGIN, TH_MARGIN + j*12);
 
         for (int i=0;i<num_elements;i++) {
             if (i<counter)
@@ -117,28 +119,6 @@ void ofApp::draw(){
             graph.addVertex(ofVec2f(x,y)); 
         }
         graph.draw();
-
-        // Send OSC messages...
-		ofxOscMessage m;
-		m.setAddress("/data" + ofToString(j));
-		m.addFloatArg(data[j][counter]);
-		osc_sender.sendMessage(m);
-
-        // Send MIDI
-        midi_out.sendNoteOff(midi_channel, midi_note, midi_velocity); // Cancel previous note...
-        midi_note = ofMap(data[j][counter], 0.0, 1.0, MIDI_MIN, MIDI_MAX);
-        midi_out.sendNoteOn(midi_channel, midi_note, midi_velocity); // Send new note
-        // In case we want to send pitch-bend data...
-        //midi_out.sendPitchBend(channel, bend);
-        
-        // Send serial/ardiuno CV
-        if (bSetupArduino) {
-            int pin = 8+j; // Super hacky: series 1 gives us pin 9, 2 gives us pin 10, 3 gives 11 (the only available pins...)
-		    ard.sendPwm(pin, (int)(256 * data[j][counter]));   // pwm...
-        }
-
-        //serial.writeByte(8+j);
-		//serial.writeByte((int)(256 * data[j][counter]));   // pwm...
     }
 
     // Draw little circles that follow the data
@@ -155,35 +135,71 @@ void ofApp::draw(){
  
     }
 
-    // Send the date data
-    // Send OSC messages...
-    time_t time = int(data[0][counter]);
-    struct tm *tm = localtime(&time);
-    ofxOscMessage y;
-    y.setAddress("/year");
-    y.addIntArg(tm->tm_year+1900);
-    osc_sender.sendMessage(y);
-
-    ofxOscMessage m;
-    m.setAddress("/month");
-    m.addIntArg(tm->tm_mon+1);
-    osc_sender.sendMessage(m);
-    
-    ofxOscMessage d;
-    d.setAddress("/day");
-    d.addIntArg(tm->tm_mday);
-    osc_sender.sendMessage(d);
-
     ofSetColor(ofColor(255));
     ofDrawBitmapString("Data per second: " + ofToString(ofGetFrameRate()), TW_MARGIN, TH_MARGIN + (num_series+1)*12);
     ofDrawBitmapString("Date: " + ofToString(tm->tm_mday) + "-" + ofToString(tm->tm_mon+1) + "-" + ofToString(tm->tm_year+1900), TW_MARGIN, TH_MARGIN + (num_series+2)*12);
-    
-    counter = (counter + 1) % num_elements;
-}
+
+    if (bRun && counter < num_elements) {
+
+        // Send OSC and MIDI messages
+        
+        // Update the arduino
+        ard.update();
+        
+        for (int j=num_series-1;j>0;j--) {
+            // Send OSC messages...
+            ofxOscMessage m;
+            m.setAddress("/data" + ofToString(j));
+            m.addFloatArg(data[j][counter]);
+            osc_sender.sendMessage(m);
+
+            // Send MIDI
+            midi_out.sendNoteOff(midi_channel, midi_note, midi_velocity); // Cancel previous note...
+            //midi_out_2.sendNoteOff(midi_channel, midi_note, midi_velocity); // Cancel previous note...
+            midi_note = ofMap(data[j][counter], 0.0, 1.0, MIDI_MIN, MIDI_MAX);
+            midi_out.sendNoteOn(midi_channel, midi_note, midi_velocity); // Send new note
+            //midi_out_2.sendNoteOn(midi_channel, midi_note, midi_velocity); // Send new note
+            // In case we want to send pitch-bend data...
+            //midi_out.sendPitchBend(channel, bend);
+            
+            // Send serial/ardiuno CV
+            if (bSetupArduino) {
+                int pin = 8+j; // Super hacky: series 1 gives us pin 9, 2 gives us pin 10, 3 gives 11 (the only available pins...)
+                ard.sendPwm(pin, (int)(256 * data[j][counter]));   // pwm...
+            }
+        }
+
+        // Send the date data
+        // Send OSC messages...
+        ofxOscMessage y;
+        y.setAddress("/year");
+        y.addIntArg(tm->tm_year+1900);
+        osc_sender.sendMessage(y);
+
+        ofxOscMessage m;
+        m.setAddress("/month");
+        m.addIntArg(tm->tm_mon+1);
+        osc_sender.sendMessage(m);
+        
+        ofxOscMessage d;
+        d.setAddress("/day");
+        d.addIntArg(tm->tm_mday);
+        osc_sender.sendMessage(d);
+        
+        counter++;
+    }
+    if (!bRun && counter < num_elements) 
+        if (counter == 0)
+            ofDrawBitmapString("Press 'r' to run", TW_MARGIN, TH_MARGIN + (num_series+5)*12);
+        else
+            ofDrawBitmapString("Paused. Press 'r' to run", TW_MARGIN, TH_MARGIN + (num_series+5)*12);
+
+    }
 
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key){
-
+    if (key=='r')
+        bRun = !bRun;
 }
 
 //--------------------------------------------------------------
@@ -198,7 +214,8 @@ void ofApp::mouseMoved(int x, int y ){
 
 //--------------------------------------------------------------
 void ofApp::mouseDragged(int x, int y, int button){
-
+    if (x > W_MARGIN && x < (ofGetWidth() - W_MARGIN))
+        counter = num_elements * (x-W_MARGIN) / (ofGetWidth() - 2 * W_MARGIN);
 }
 
 //--------------------------------------------------------------

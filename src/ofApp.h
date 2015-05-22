@@ -19,7 +19,7 @@
 #define TH_MARGIN 20
 #define TW_MARGIN 20
 
-#define SKIP 20
+#define SKIP 12
 #define FRAME_RATE 15 
 
 #define MIDI_MIN 30
@@ -53,7 +53,7 @@ class ofApp : public ofBaseApp{
         vector<ofColor> u_d_color;
 
         int counter;
-        
+        bool bRun;
         ofxCsv csv_reader;
 
         // OSC mechanism
@@ -61,6 +61,7 @@ class ofApp : public ofBaseApp{
         
         // MIDI mechanism
         ofxMidiOut midi_out;
+        ofxMidiOut midi_out_2;
         int midi_channel;
         int midi_note, midi_velocity;
         
