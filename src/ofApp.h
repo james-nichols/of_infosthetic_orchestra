@@ -11,7 +11,8 @@
 #include "ofxMidi.h"
 
 //#define HOST "localhost"
-#define HOST "192.168.0.255"
+//#define HOST "192.168.0.255"
+#define HOST "10.1.1.255"
 #define PORT 57120
 
 #define H_MARGIN 100
@@ -46,6 +47,7 @@ class ofApp : public ofBaseApp{
 	   
         // The raw data
         vector<vector<double> > data;
+        vector<vector<double> > data_original;
         int num_series; // "columns"
         int num_elements; // "rows"
 
@@ -63,12 +65,13 @@ class ofApp : public ofBaseApp{
         ofxMidiOut midi_out;
         ofxMidiOut midi_out_2;
         int midi_channel;
-        int midi_note, midi_velocity;
+        int midi_note, midi_arp_note, midi_velocity;
         
         // Arduino/CV mechanism
     	ofArduino ard;
     	bool bSetupArduino;
         void setupArduino(const int & version);
-        
+       
+        bool bDraw;
 		//ofSerial serial;        
 };

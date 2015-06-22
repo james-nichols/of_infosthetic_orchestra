@@ -6,6 +6,7 @@
 void ofApp::setup(){
     counter = 0;
     bRun = false;
+    bDraw = true;
     ofSetDataPathRoot("./");  
     // Load the data from a CSV file...
     csv_reader.loadFile(ofToDataPath("../Resources/mtgoxAUD.csv"));
@@ -13,20 +14,22 @@ void ofApp::setup(){
     num_elements = 0; 
      
     for (int j=0;j<num_series;j++) {
-        
-        vector<double> col;
-
         // We give each data series a colour
-        int hue = float(j*255)/float(num_series); // ofRandom(0,255);
+        int hue = fmod(float((j-1)*255)/float(num_series),float(255.0)); // ofRandom(0,255);
         d_color.push_back(ofColor::fromHsb(hue, 240, 240));
         u_d_color.push_back(ofColor::fromHsb(hue, 80, 80));
         
+        vector<double> col;
+        vector<double> col_orig;
         for (int i=0;i<csv_reader.numRows;i+=SKIP) {
             if (j==1) col.push_back(log(atof(csv_reader.data[i][j].c_str())));
             else col.push_back(atof(csv_reader.data[i][j].c_str()));
             if (j==0) num_elements++;
+            
+            col_orig.push_back(atof(csv_reader.data[i][j].c_str()));
         }
         data.push_back(col);
+        data_original.push_back(col_orig);
     }
     
     for (int j=0;j<num_elements;j++) {
@@ -40,7 +43,11 @@ void ofApp::setup(){
         for (int j=0;j<num_elements;j++) {
             data[i][j] = ofNormalize(data[i][j], min, max);
         }
+        // Finish with a (low) bang...
+        data[i].push_back(0.0);
     }
+    data[0].push_back(*(max_element(data[0].begin(), data[0].end())));
+
 
     ofLog() << "Estimated time to finish cycle: " << float(num_elements) / float(FRAME_RATE);
 
@@ -50,11 +57,13 @@ void ofApp::setup(){
     // Set up the MIDI osc_sender
     midi_channel = 1;
     midi_note = 30;
+    midi_arp_note = 30;
     midi_velocity = 127;
     
     midi_out.listPorts();
     ofLog() << "Opening MIDI port " << 0 << ", sending to channel " << midi_channel;
-    midi_out.openPort(1);
+    midi_out.openPort(0);
+    midi_out_2.openPort(1);
 
     ofSetWindowTitle("Infosthetic Orchestra Data Broadcaster and Visualiser");
     ofDisableAntiAliasing();
@@ -100,25 +109,36 @@ void ofApp::draw(){
 
     time_t time = int(data[0][counter]);
     struct tm *tm = localtime(&time);
-
+    
+    if (bDraw) { 
     for (int j=num_series-1;j>0;j--) {
         ofMesh graph;
+        ofMesh graph_double;
         graph.setMode(OF_PRIMITIVE_LINE_STRIP);
+        graph_double.setMode(OF_PRIMITIVE_LINE_STRIP);
 
         // Write legend
         ofSetColor(d_color[j]);
-        ofDrawBitmapString("Data "+ofToString(j)+": "+ofToString(data[j][counter]), TW_MARGIN, TH_MARGIN + j*12);
+        if (j==1) ofDrawBitmapString("Data 1, AUD/BTC (MtGox): $"+ofToString(data_original[j][counter]), TW_MARGIN, TH_MARGIN + j*12);
+        if (j==2) ofDrawBitmapString("Data 2, Price weighted volume: "+ofToString(data_original[j][counter]) + " BTC", TW_MARGIN, TH_MARGIN + j*12);
+        //ofDrawBitmapString("Data "+ofToString(j)+": "+ofToString(data_original[j][counter]), TW_MARGIN, TH_MARGIN + j*12);
 
         for (int i=0;i<num_elements;i++) {
-            if (i<counter)
+            if (i<counter) {
                 graph.addColor(d_color[j]);
-            else 
+                graph_double.addColor(d_color[j]);
+            }
+            else {
                 graph.addColor(u_d_color[j]);
+                graph_double.addColor(u_d_color[j]);
+            }
             float x = float((ofGetWidth()-2*W_MARGIN) * i) / float(num_elements) + float(W_MARGIN);
             float y = ofGetHeight() - ((ofGetHeight()-2*H_MARGIN) * data[j][i] + float(H_MARGIN));
             graph.addVertex(ofVec2f(x,y)); 
+            graph_double.addVertex(ofVec2f(x,y+1)); 
         }
         graph.draw();
+        graph_double.draw();
     }
 
     // Draw little circles that follow the data
@@ -128,17 +148,17 @@ void ofApp::draw(){
 
         ofSetColor(d_color[j]);
         ofNoFill();
-        ofCircle(x, y, 3);
+        ofCircle(x, y, 5);
         ofSetColor(ofColor(255,255,255,80));
         ofFill();
-        ofCircle(x, y, 2);
+        ofCircle(x, y, 4);
  
     }
 
     ofSetColor(ofColor(255));
-    ofDrawBitmapString("Data per second: " + ofToString(ofGetFrameRate()), TW_MARGIN, TH_MARGIN + (num_series+1)*12);
+    ofDrawBitmapString("Data output rate: " + ofToString(round(ofGetFrameRate())) + " Hz", TW_MARGIN, TH_MARGIN + (num_series+1)*12);
     ofDrawBitmapString("Date: " + ofToString(tm->tm_mday) + "-" + ofToString(tm->tm_mon+1) + "-" + ofToString(tm->tm_year+1900), TW_MARGIN, TH_MARGIN + (num_series+2)*12);
-
+    }
     if (bRun && counter < num_elements) {
 
         // Send OSC and MIDI messages
@@ -151,23 +171,24 @@ void ofApp::draw(){
             ofxOscMessage m;
             m.setAddress("/data" + ofToString(j));
             m.addFloatArg(data[j][counter]);
-            osc_sender.sendMessage(m);
-
-            // Send MIDI
-            midi_out.sendNoteOff(midi_channel, midi_note, midi_velocity); // Cancel previous note...
-            //midi_out_2.sendNoteOff(midi_channel, midi_note, midi_velocity); // Cancel previous note...
-            midi_note = ofMap(data[j][counter], 0.0, 1.0, MIDI_MIN, MIDI_MAX);
-            midi_out.sendNoteOn(midi_channel, midi_note, midi_velocity); // Send new note
-            //midi_out_2.sendNoteOn(midi_channel, midi_note, midi_velocity); // Send new note
-            // In case we want to send pitch-bend data...
-            //midi_out.sendPitchBend(channel, bend);
-            
+            osc_sender.sendMessage(m);            
             // Send serial/ardiuno CV
             if (bSetupArduino) {
                 int pin = 8+j; // Super hacky: series 1 gives us pin 9, 2 gives us pin 10, 3 gives 11 (the only available pins...)
                 ard.sendPwm(pin, (int)(256 * data[j][counter]));   // pwm...
             }
         }
+
+        // Send MIDI
+        midi_out.sendNoteOff(midi_channel, midi_arp_note, midi_velocity); // Cancel previous note...
+        //midi_out_2.sendNoteOff(midi_channel, midi_note, midi_velocity); // Cancel previous note...
+        midi_note = ofMap(data[1][counter], 0.0, 1.0, MIDI_MIN, MIDI_MAX);
+        midi_arp_note = int(ofMap(data[1][counter], 0.0, 1.0, MIDI_MIN, MIDI_MAX)) + int(ofMap(data[2][counter], 0.0, 1.0, 0, 12));
+        midi_velocity = ofMap(data[2][counter], 0.0, 1.0, 64, 127);
+        midi_out.sendNoteOn(midi_channel, midi_note, midi_velocity); // Send new note
+        midi_out_2.sendNoteOn(midi_channel, midi_arp_note, midi_velocity); // Send new note
+        // In case we want to send pitch-bend data...
+        //midi_out.sendPitchBend(channel, bend);
 
         // Send the date data
         // Send OSC messages...
@@ -188,18 +209,21 @@ void ofApp::draw(){
         
         counter++;
     }
-    if (!bRun && counter < num_elements) 
+    if (!bRun && counter < num_elements && bDraw) 
         if (counter == 0)
             ofDrawBitmapString("Press 'r' to run", TW_MARGIN, TH_MARGIN + (num_series+5)*12);
         else
             ofDrawBitmapString("Paused. Press 'r' to run", TW_MARGIN, TH_MARGIN + (num_series+5)*12);
-
-    }
+    //if (!bDraw)
+    //    ofDrawBitmapString("d", TW_MARGIN, TH_MARGIN + (num_series+6)*12);
+}
 
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key){
     if (key=='r')
         bRun = !bRun;
+    if (key=='d')
+        bDraw = !bDraw; 
 }
 
 //--------------------------------------------------------------
